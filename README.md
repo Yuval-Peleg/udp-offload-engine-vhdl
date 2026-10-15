@@ -1,5 +1,7 @@
 # UDP Offload Engine
 
+![UDP Offload Engine](Docs/Images/logo.png)
+
 A UDP/IPv4/Ethernet offload engine in VHDL, targeting a Xilinx FPGA behind the
 XXV Ethernet (10G/25G) MAC.
 
