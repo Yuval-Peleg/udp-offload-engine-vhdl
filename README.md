@@ -275,4 +275,4 @@ simulator log names the rule that was broken and when.
 
 ## License
 
-MIT, see `LICENSE`.
+MIT, see [LICENSE](LICENSE).
