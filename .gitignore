@@ -21,3 +21,6 @@ __pycache__/
 # host-side test binaries
 host_test/uoe_loopback_test
 host_test/udp_echo
+
+# scripts/package_uoe.tcl writes the packaged IP here
+ip/

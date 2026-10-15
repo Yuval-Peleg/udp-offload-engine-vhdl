@@ -34,6 +34,8 @@ scripts/                 build and run helpers
   run_uoe_test.sh          the full-chip regression
   run_wave.sh              GUI waveform for one block and variant
   run_sim.tcl              full-project waveform run (needs all of rtl/ to compile)
+  package_uoe.tcl          packages rtl/ as a Vivado IP
+  add_uoe.tcl              adds the UOE and an XXV MAC to a block design
   completions.bash         tab completion for the test scripts
 host_test/               host-side bring-up test for the real board
   uoe_loopback_test.c      UDP loopback checker; no root, plain sockets
@@ -109,6 +111,33 @@ it. `conf_port` is the *source* port used on transmit.
 **Minimum frame.** Payloads shorter than 18 bytes are padded on transmit to
 meet Ethernet's 60-byte minimum. The padding is not counted in the UDP length
 field, so the receiver still sees the original length.
+
+### Using it in a block design
+
+Package it as an IP, for the part of the project it is for:
+
+```bash
+vivado -mode batch -source scripts/package_uoe.tcl -tclargs <part> [ip folder]
+```
+
+Or let `add_uoe.tcl` package it and add it, wired to an XXV MAC (10GBASE-R),
+to an open block design, from the Vivado Tcl console:
+
+```tcl
+set argv {-ip 192.168.1.128 -dclk zynq_ultra_ps_e_0/pl_clk0 \
+          -resetn zynq_ultra_ps_e_0/pl_resetn0 -sfp 0}
+source scripts/add_uoe.tcl
+```
+
+`-sfp N` is for the ZCU102 and also writes the GT pin, reference clock and
+`TX_DISABLE` constraints; on other boards pass `-gt_quad`/`-gt_lane` instead.
+`-axi` connects an AXI master to the MAC's registers. The full list of options
+is at the top of the script.
+
+Left for you: your logic on `udp_rx`/`udp_tx` and `conf_tx_dst_*`, clocked by
+`uoe_xxv/tx_clk_out_0` and reset by `uoe_rst/peripheral_aresetn`; without
+`-sfp`, the GT pin, reference clock and `uoe_sfp_tx_disable_b` constraints from
+your board's schematic; without `-axi`, a master for `uoe_xxv/s_axi_0`.
 
 ### Throughput
 
