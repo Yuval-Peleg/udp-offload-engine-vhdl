@@ -3,51 +3,6 @@
 A UDP/IPv4/Ethernet offload engine in VHDL, targeting a Xilinx FPGA behind the
 XXV Ethernet (10G/25G) MAC.
 
-## Layout
-
-```
-rtl/                     the hardware design -- one VHDL file per block
-testbenches/             VHDL testbenches: <block>_tb.vhd per block, plus
-  README.md                how the reusable AXIS components work
-  axis_pkg.vhd             shared beat type and helpers
-  axis_driver.vhd          plays a stimulus file onto a bus
-  axis_monitor.vhd         logs valid beats to a file
-  sideband_monitor.vhd     logs a latched non-AXIS output (e.g. src_port)
-  axis_checker.vhd         passive AXI-Stream protocol assertions
-  axis_stall.vhd           randomized tready, for backpressure testing
-  uoe_tb_full.vhd          the whole chip, end to end
-  uoe_reset_tb.vhd         the whole chip's reset stretcher
-reference_model/         an independent Python model of the same protocols
-  uoe_model.py             shared: byte packing, checksums, headers, per-block models
-  gen_<block>.py           writes the test vectors for one block
-  gen_uoe.py               writes the test vectors for the whole chip
-  split_mac_tx.py          splits a mac_tx capture by EtherType
-  split_by_tag.py          splits a two-source capture by a payload tag
-  compare_beats.py         diffs what the simulation produced vs what was predicted
-  test_vectors/            generated data + simulation output (all gitignored)
-scripts/                 build and run helpers
-  setup_vivado_libs.sh     one-time: make Vivado runnable without root
-  vivado_env.sh            sourced by the others; locates the toolchain
-  test_tables.sh           sourced by the test scripts; settings they share
-  compile_check.sh         analyse rtl/ only
-  run_tests.sh             the regression, block by block
-  run_uoe_test.sh          the full-chip regression
-  run_wave.sh              GUI waveform for one block and variant
-  run_sim.tcl              full-project waveform run (needs all of rtl/ to compile)
-  package_uoe.tcl          packages rtl/ as a Vivado IP
-  add_uoe.tcl              adds the UOE and an XXV MAC to a block design
-  completions.bash         tab completion for the test scripts
-host_test/               host-side bring-up test for the real board
-  uoe_loopback_test.c      UDP loopback checker; no root, plain sockets
-  udp_echo.c               software echo, to test the host side without a board
-  Makefile                 builds both
-  README.md                how to cable and configure it, and what can lie
-```
-
-Testbenches are built from the reusable components in `testbenches/`, so a new
-one is mostly the DUT plus wiring. `testbenches/README.md` explains the
-components and how to add a block.
-
 ## Integration
 
 Designed to sit behind Vivado's **XXV Ethernet (10G/25G)** IP. `uoe.vhd` is the
@@ -68,49 +23,41 @@ packed MSB-first.
 
 ### Things you have to know before wiring it up
 
-**The transmit destination comes from `conf_tx_dst_*`, per packet.**
-`conf_tx_dst_mac`, `conf_tx_dst_ip` and `conf_tx_dst_port` are sampled when a
-packet's first beat is accepted on `udp_tx`, and that packet keeps that
-address all the way out. Hold them stable from when the first beat is offered
-until it is accepted — the same rule AXI-Stream applies to `tdata` — and change
-them freely at any other time, including between back-to-back packets. There
-is no stall on a change. The block does **not** reply to whoever sent you a
-packet, and it never issues an ARP request, so it cannot discover a peer's MAC
-by itself — you must supply it.
-
-**`udp_rx` has no `tready`.** Your logic must accept a beat every cycle while
-`udp_rx_tvalid` is high. There is nothing to backpressure with.
-
-**The receive path assumes the MAC cannot be stopped.** `mac_rx_tready` exists
-but the XXV MAC's receive stream ignores it, so the design is built to keep up
-or drop whole frames, never to stall the sender.
-
-**Reset can be any length; do not let the MAC send during it.** The XPM FIFOs
-inside ignore a reset shorter than 4 clocks, so `uoe.vhd` stretches every
-`rstn` pulse, even a one-clock glitch, to at least 64 clocks before the blocks
-see it.
-
-**Release reset only once the clock is stable** — with the XXV MAC that means
-gating on GT/MMCM lock rather than a pin.
-
-**No IP fragmentation, in either direction.** The largest frame the receive
-path can buffer is `circular_buffer_filter`'s capacity, configured as
-`BRAM_DEPTH` × 8 = **16 KB**; anything larger is dropped. For jumbo frames set
-MTU 9000 at both ends. On transmit, a payload that would exceed the MTU is not
-split.
-
-**Checksums.** IPv4 header checksums are computed on transmit and verified on
-receive. The **UDP checksum is always transmitted as zero**, which is legal for
-IPv4 and means a receiver cannot detect payload corruption from the UDP layer
-alone.
-
-**No port filtering on receive.** `rx_udp` forwards every datagram that passed
-the MAC and IP checks and exposes `udp_rx_dst_port` so your fabric can route
-it. `conf_port` is the *source* port used on transmit.
-
-**Minimum frame.** Payloads shorter than 18 bytes are padded on transmit to
-meet Ethernet's 60-byte minimum. The padding is not counted in the UDP length
-field, so the receiver still sees the original length.
+- **The transmit destination comes from `conf_tx_dst_*`, per packet.**
+  `conf_tx_dst_mac`, `conf_tx_dst_ip` and `conf_tx_dst_port` are sampled when a
+  packet's first beat is accepted on `udp_tx`, and that packet keeps that
+  address all the way out. Hold them stable from when the first beat is offered
+  until it is accepted — the same rule AXI-Stream applies to `tdata` — and change
+  them freely at any other time, including between back-to-back packets. There
+  is no stall on a change. The block does **not** reply to whoever sent you a
+  packet, and it never issues an ARP request, so it cannot discover a peer's MAC
+  by itself — you must supply it.
+- **`udp_rx` has no `tready`.** Your logic must accept a beat every cycle while
+  `udp_rx_tvalid` is high. There is nothing to backpressure with.
+- **The receive path assumes the MAC cannot be stopped.** `mac_rx_tready` exists
+  but the XXV MAC's receive stream ignores it, so the design is built to keep up
+  or drop whole frames, never to stall the sender.
+- **Reset can be any length; do not let the MAC send during it.** The XPM FIFOs
+  inside ignore a reset shorter than 4 clocks, so `uoe.vhd` stretches every
+  `rstn` pulse, even a one-clock glitch, to at least 64 clocks before the blocks
+  see it.
+- **Release reset only once the clock is stable** — with the XXV MAC that means
+  gating on GT/MMCM lock rather than a pin.
+- **No IP fragmentation, in either direction.** The largest frame the receive
+  path can buffer is `circular_buffer_filter`'s capacity, configured as
+  `BRAM_DEPTH` × 8 = **16 KB**; anything larger is dropped. For jumbo frames set
+  MTU 9000 at both ends. On transmit, a payload that would exceed the MTU is not
+  split.
+- **Checksums.** IPv4 header checksums are computed on transmit and verified on
+  receive. The **UDP checksum is always transmitted as zero**, which is legal for
+  IPv4 and means a receiver cannot detect payload corruption from the UDP layer
+  alone.
+- **No port filtering on receive.** `rx_udp` forwards every datagram that passed
+  the MAC and IP checks and exposes `udp_rx_dst_port` so your fabric can route
+  it. `conf_port` is the *source* port used on transmit.
+- **Minimum frame.** Payloads shorter than 18 bytes are padded on transmit to
+  meet Ethernet's 60-byte minimum. The padding is not counted in the UDP length
+  field, so the receiver still sees the original length.
 
 ### Using it in a block design
 
@@ -150,7 +97,7 @@ Measured on hardware, 10G link, loopback:
 | 2048 | 8.59 Gbps | 87.6 % |
 
 Smaller payloads are limited by packet rate rather than by this design. See
-`host_test/` for the tool that produced these.
+[host_test/](host_test/) for the tool that produced these.
 
 ## How a test works
 
@@ -203,54 +150,56 @@ and is not compared.
 
 ## Running
 
-Vivado 2022.2 links one library that Ubuntu 24.04+ no longer packages,
-`libtinfo.so.5`. It is a missing *file*, not a missing privilege, so it
-installs into your home directory with no root:
+1. **Install the one missing library, once.** Vivado 2022.2 links one library
+   that Ubuntu 24.04+ no longer packages, `libtinfo.so.5`. It is a missing
+   *file*, not a missing privilege, so it installs into your home directory
+   with no root:
 
-```bash
-./scripts/setup_vivado_libs.sh          # once, ~100 KB download
-```
+   ```bash
+   ./scripts/setup_vivado_libs.sh          # once, ~100 KB download
+   ```
 
-Then, from the project root:
+2. **Run the tests**, from the project root:
 
-```bash
-./scripts/compile_check.sh                  # does the RTL compile? (seconds)
-./scripts/run_tests.sh                      # full regression, every block
-./scripts/run_tests.sh -b rx_udp -t random  # one block, one variant
-./scripts/run_tests.sh -l                   # list blocks and variants
-./scripts/run_uoe_test.sh                   # the whole chip, end to end
-```
+   ```bash
+   ./scripts/compile_check.sh                  # does the RTL compile? (seconds)
+   ./scripts/run_tests.sh                      # full regression, every block
+   ./scripts/run_tests.sh -b rx_udp -t random  # one block, one variant
+   ./scripts/run_tests.sh -l                   # list blocks and variants
+   ./scripts/run_uoe_test.sh                   # the whole chip, end to end
+   ```
 
-The block tests each prove one hop. `run_uoe_test.sh` drives `uoe` itself and
-covers the three things that exist only at the top level: the endianness
-converters on the MAC ports, `circular_buffer_filter` acting on the MAC's error
-flag, and `arp_handler` competing with the TX path for `mac_tx` through
-`axis_priority_handler`. The transmit destination changes between back-to-back
-packets, and every frame's MAC, IP and port are checked. A final `reset` row
-checks the reset stretcher: a one-clock glitch must still reset the design for
-64 clocks.
+   The block tests each prove one hop. `run_uoe_test.sh` drives `uoe` itself
+   and covers the three things that exist only at the top level: the
+   endianness converters on the MAC ports, `circular_buffer_filter` acting on
+   the MAC's error flag, and `arp_handler` competing with the TX path for
+   `mac_tx` through `axis_priority_handler`. The transmit destination changes
+   between back-to-back packets, and every frame's MAC, IP and port are
+   checked. A final `reset` row checks the reset stretcher: a one-clock glitch
+   must still reset the design for 64 clocks.
 
-Two streams run at once — frames into `mac_rx`, payloads into `udp_tx` — so
-`mac_tx` carries both ARP replies and UDP frames. Nothing in the design fixes
-how those interleave, so `split_mac_tx.py` separates them by EtherType and each
-class is compared in order. That keeps every property that is specified and
-tests no arbitration schedule that is not.
+   Two streams run at once — frames into `mac_rx`, payloads into `udp_tx` — so
+   `mac_tx` carries both ARP replies and UDP frames. Nothing in the design
+   fixes how those interleave, so `split_mac_tx.py` separates them by
+   EtherType and each class is compared in order. That keeps every property
+   that is specified and tests no arbitration schedule that is not.
 
-Open a waveform only when a test fails and the file comparison hasn't already
-told you why:
+3. **Open a waveform only when a test fails** and the file comparison hasn't
+   already told you why:
 
-```bash
-./scripts/run_wave.sh                   # rx_udp, the 'random' variant
-./scripts/run_wave.sh -b tx_udp -t ipg  # any block, any variant
-```
+   ```bash
+   ./scripts/run_wave.sh                   # rx_udp, the 'random' variant
+   ./scripts/run_wave.sh -b tx_udp -t ipg  # any block, any variant
+   ```
 
-The variant sets the same input timing **and** the same output backpressure the
-regression used, so what you see is the run that failed, not a different one.
+   The variant sets the same input timing **and** the same output
+   backpressure the regression used, so what you see is the run that failed,
+   not a different one.
 
-That reuses the regression's sources and only elaborates with `--debug typical`,
-so it works even while other blocks fail to compile. `scripts/run_sim.tcl` is
-the heavier alternative — it builds a real Vivado project over all of `rtl/`,
-so it needs every source to analyse first.
+   That reuses the regression's sources and only elaborates with
+   `--debug typical`, so it works even while other blocks fail to compile.
+   `scripts/run_sim.tcl` is the heavier alternative — it builds a real Vivado
+   project over all of `rtl/`, so it needs every source to analyse first.
 
 `scripts/vivado_env.sh` finds the install and is sourced by the other scripts;
 override with `VIVADO_ROOT=<dir containing bin/xvhdl>`. It deliberately does
@@ -272,6 +221,51 @@ install path into that script — so an install that has since been moved leaves
 
 A `protocol errors=N` count above zero comes from `axis_checker` instead: the
 simulator log names the rule that was broken and when.
+
+## What is where
+
+| Path | What it holds |
+|---|---|
+| `rtl/` | the hardware design -- one VHDL file per block |
+| `testbenches/` | VHDL testbenches: `<block>_tb.vhd` per block, plus the files below |
+| [`testbenches/README.md`](testbenches/README.md) | how the reusable AXIS components work |
+| `testbenches/axis_pkg.vhd` | shared beat type and helpers |
+| `testbenches/axis_driver.vhd` | plays a stimulus file onto a bus |
+| `testbenches/axis_monitor.vhd` | logs valid beats to a file |
+| `testbenches/sideband_monitor.vhd` | logs a latched non-AXIS output (e.g. `src_port`) |
+| `testbenches/axis_checker.vhd` | passive AXI-Stream protocol assertions |
+| `testbenches/axis_stall.vhd` | randomized `tready`, for backpressure testing |
+| `testbenches/uoe_tb_full.vhd` | the whole chip, end to end |
+| `testbenches/uoe_reset_tb.vhd` | the whole chip's reset stretcher |
+| `reference_model/` | an independent Python model of the same protocols |
+| `reference_model/uoe_model.py` | shared: byte packing, checksums, headers, per-block models |
+| `reference_model/gen_<block>.py` | writes the test vectors for one block |
+| `reference_model/gen_uoe.py` | writes the test vectors for the whole chip |
+| `reference_model/split_mac_tx.py` | splits a `mac_tx` capture by EtherType |
+| `reference_model/split_by_tag.py` | splits a two-source capture by a payload tag |
+| `reference_model/compare_beats.py` | diffs what the simulation produced vs what was predicted |
+| `reference_model/test_vectors/` | generated data + simulation output (all gitignored) |
+| `scripts/` | build and run helpers |
+| `scripts/setup_vivado_libs.sh` | one-time: make Vivado runnable without root |
+| `scripts/vivado_env.sh` | sourced by the others; locates the toolchain |
+| `scripts/test_tables.sh` | sourced by the test scripts; settings they share |
+| `scripts/compile_check.sh` | analyse `rtl/` only |
+| `scripts/run_tests.sh` | the regression, block by block |
+| `scripts/run_uoe_test.sh` | the full-chip regression |
+| `scripts/run_wave.sh` | GUI waveform for one block and variant |
+| `scripts/run_sim.tcl` | full-project waveform run (needs all of `rtl/` to compile) |
+| `scripts/package_uoe.tcl` | packages `rtl/` as a Vivado IP |
+| `scripts/add_uoe.tcl` | adds the UOE and an XXV MAC to a block design |
+| `scripts/completions.bash` | tab completion for the test scripts |
+| `host_test/` | host-side bring-up test for the real board |
+| `host_test/uoe_loopback_test.c` | UDP loopback checker; no root, plain sockets |
+| `host_test/udp_echo.c` | software echo, to test the host side without a board |
+| `host_test/Makefile` | builds both |
+| [`host_test/README.md`](host_test/README.md) | how to cable and configure it, and what can lie |
+
+Testbenches are built from the reusable components in `testbenches/`, so a new
+one is mostly the DUT plus wiring. [testbenches/README.md](testbenches/README.md) explains the
+components and how to add a block.
 
 ## License
 
