@@ -1,9 +1,37 @@
-# UDP Offload Engine
-
-![UDP Offload Engine](Docs/Images/logo.png)
+<p align="center">
+  <img src="Docs/Images/logo.png" alt="UDP Offload Engine">
+</p>
 
 A UDP/IPv4/Ethernet offload engine in VHDL, targeting a Xilinx FPGA behind the
 XXV Ethernet (10G/25G) MAC.
+
+## Features
+
+- **Unpacking Ethernet, IPv4 and UDP headers**
+
+  | | |
+  |---|---|
+  | ✅ Filtering based on destination MAC address | ❌️ Receive broadcast or multicast UDP |
+  | ✅ Checks the IPv4 header: version, fragmentation, protocol, checksum, destination IP | ❌️ Check the UDP checksum |
+  | ✅ Drops frames the MAC flagged as bad, whole | ❌️ Filter by UDP port (your logic routes by `udp_rx_dst_port`) |
+  | ✅ Reports the source MAC, IP and port, and the destination port | ❌️ Handle backpressure: `udp_rx` has no `tready` |
+  | ✅ Frames up to 16 KB, so jumbo frames (MTU 9000) | ❌️ Reassemble fragmented IP packets |
+
+- **Building Ethernet, IPv4 and UDP headers**
+
+  | | |
+  |---|---|
+  | ✅ Destination MAC, IP and port chosen per packet, even back to back | ❌️ Compute the UDP checksum (always sent as 0) |
+  | ✅ IPv4 header checksum and a per-packet ID | ❌️ Fragment a payload larger than the MTU |
+  | ✅ Pads short payloads to Ethernet's 60-byte minimum | ❌️ Reply automatically to whoever sent a packet |
+  | ✅ Jumbo frames, measured at 9.71 Gb/s on a 10G link | |
+
+- **ARP**
+
+  | | |
+  |---|---|
+  | ✅ Answers ARP requests for its own IP | ❌️ Send ARP requests, so it cannot find a peer's MAC by itself |
+  | ✅ Replies go out ahead of data, never mid-packet | |
 
 ## Integration
 
