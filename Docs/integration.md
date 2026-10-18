@@ -19,6 +19,10 @@ Its ports are listed in the [README](../README.md#ports).
   by itself — you must supply it.
 - **`udp_rx` has no `tready`.** Your logic must accept a beat every cycle while
   `udp_rx_tvalid` is high. There is nothing to backpressure with.
+- **Discard a packet that ends with `udp_rx_tuser` high.** `rx_udp` raises it
+  together with `tlast` when the datagram's UDP or IPv4 length runs past the
+  end of the frame that carried it. Its beats have already been delivered, so
+  your logic has to drop what it kept of that packet.
 - **The receive path assumes the MAC cannot be stopped.** `mac_rx_tready` exists
   but the XXV MAC's receive stream ignores it, so the design is built to keep up
   or drop whole frames, never to stall the sender.
