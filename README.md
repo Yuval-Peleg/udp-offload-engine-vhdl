@@ -5,7 +5,7 @@
 A UDP/IPv4/Ethernet offload engine in VHDL, targeting a Xilinx FPGA behind the
 XXV Ethernet (10G/25G) MAC.
 
-https://github.com/user-attachments/assets/66b7be16-38d7-4ad0-9b0d-272d15d6fd64
+https://github.com/user-attachments/assets/a99e12ae-3682-4554-88a3-a12f3bb0d1a7
 
 ## Features
 
