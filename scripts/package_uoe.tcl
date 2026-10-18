@@ -1,6 +1,7 @@
 # Package the UOE as a Vivado IP, from the VHDL in rtl/ as it is now.
 #
 #   vivado -mode batch -source scripts/package_uoe.tcl -tclargs <part> [ip folder]
+#   or ./scripts/package_uoe.sh --part <part> [--out <ip folder>]
 #
 #   <part>       the FPGA part of the project it is for, e.g. xczu9eg-ffvb1156-2-e
 #   [ip folder]  where to write it (default ip/ next to rtl/); the IP lands in

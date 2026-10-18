@@ -6,6 +6,8 @@
 #   source <UOE>/scripts/add_uoe.tcl
 # or from a shell, which opens the project and saves the block design:
 #   vivado -mode batch -source add_uoe.tcl -tclargs -project <x.xpr> <options>
+# or ./scripts/add_uoe.sh, which takes the same options with two dashes:
+#   ./scripts/add_uoe.sh --project <x.xpr> --ip A.B.C.D --dclk PIN --resetn PIN ...
 #
 #   -ip  A.B.C.D    this board's address on the network             required
 #   -dclk PIN       a free-running clock in the design, e.g. 100 MHz  required
@@ -161,6 +163,9 @@ connect_bd_net [get_bd_pins uoe_rst_inv/Res] [get_bd_pins uoe_xxv/sys_reset] \
 connect_bd_net $dclk [get_bd_pins uoe_xxv/dclk] [get_bd_pins uoe_xxv/s_axi_aclk_0]
 connect_bd_net $resetn [get_bd_pins uoe_xxv/s_axi_aresetn_0]
 if {$o(-axi) ne ""} {
+    if {[get_bd_intf_pins -quiet /$o(-axi)] eq ""} {
+        error "add_uoe: no AXI master '$o(-axi)' in the block design (is that port enabled on the PS?)"
+    }
     apply_bd_automation -rule xilinx.com:bd_rule:axi4 -config [list Clk_master Auto Clk_slave Auto \
         Clk_xbar Auto Master /$o(-axi) Slave /uoe_xxv/s_axi_0 ddr_seg Auto \
         intc_ip {New AXI SmartConnect} master_apm 0] [get_bd_intf_pins uoe_xxv/s_axi_0]

@@ -9,37 +9,41 @@ XXV Ethernet (10G/25G) MAC.
 
 - **Unpacking Ethernet, IPv4 and UDP headers**
 
-  | | |
-  |---|---|
-  | ✅ Filtering based on destination MAC address | ❌️ Receive broadcast or multicast UDP |
-  | ✅ Checks the IPv4 header: version, fragmentation, protocol, checksum, destination IP | ❌️ Check the UDP checksum |
-  | ✅ Drops frames the MAC flagged as bad, whole | ❌️ Filter by UDP port (your logic routes by `udp_rx_dst_port`) |
-  | ✅ Reports the source MAC, IP and port, and the destination port | ❌️ Handle backpressure: `udp_rx` has no `tready` |
-  | ✅ Frames up to 16 KB, so jumbo frames (MTU 9000) | ❌️ Reassemble fragmented IP packets |
+  <table>
+    <tr><td>✅ Filtering based on destination MAC address</td><td>❌️ Receive broadcast or multicast UDP</td></tr>
+    <tr><td>✅ Checks the IPv4 header: version, fragmentation, protocol, checksum, destination IP</td><td>❌️ Check the UDP checksum</td></tr>
+    <tr><td>✅ Drops frames the MAC flagged as bad, whole</td><td>❌️ Filter by UDP port (your logic routes by <code>udp_rx_dst_port</code>)</td></tr>
+    <tr><td>✅ Reports the source MAC, IP and port, and the destination port</td><td>❌️ Handle backpressure: <code>udp_rx</code> has no <code>tready</code></td></tr>
+    <tr><td>✅ Frames up to 16 KB, so jumbo frames (MTU 9000)</td><td>❌️ Reassemble fragmented IP packets</td></tr>
+  </table>
 
 - **Building Ethernet, IPv4 and UDP headers**
 
-  | | |
-  |---|---|
-  | ✅ Destination MAC, IP and port chosen per packet, even back to back | ❌️ Compute the UDP checksum (always sent as 0) |
-  | ✅ IPv4 header checksum and a per-packet ID | ❌️ Fragment a payload larger than the MTU |
-  | ✅ Pads short payloads to Ethernet's 60-byte minimum | ❌️ Reply automatically to whoever sent a packet |
-  | ✅ Jumbo frames, measured at 9.71 Gb/s on a 10G link | |
+  <table>
+    <tr><td>✅ Destination MAC, IP and port chosen per packet, even back to back</td><td>❌️ Compute the UDP checksum (always sent as 0)</td></tr>
+    <tr><td>✅ IPv4 header checksum and a per-packet ID</td><td>❌️ Fragment a payload larger than the MTU</td></tr>
+    <tr><td>✅ Pads short payloads to Ethernet's 60-byte minimum</td><td>❌️ Reply automatically to whoever sent a packet</td></tr>
+    <tr><td>✅ Jumbo frames, measured at 9.71 Gb/s on a 10G link</td><td></td></tr>
+  </table>
 
 - **ARP**
 
-  | | |
-  |---|---|
-  | ✅ Answers ARP requests for its own IP | ❌️ Send ARP requests, so it cannot find a peer's MAC by itself |
-  | ✅ Replies go out ahead of data, never mid-packet | |
+  <table>
+    <tr><td>✅ Answers ARP requests for its own IP</td><td>❌️ Send ARP requests, so it cannot find a peer's MAC by itself</td></tr>
+    <tr><td>✅ Replies go out ahead of data, never mid-packet</td><td></td></tr>
+  </table>
 
-## Integration
+## Throughput
 
-Designed to sit behind Vivado's **XXV Ethernet (10G/25G)** IP. `uoe.vhd` is the
-top level; everything below it is one clock domain, 64-bit AXI4-Stream, bytes
-packed MSB-first.
+Measured on hardware, 10G link, loopback:
 
-### Ports
+| payload | sustained | of the theoretical maximum |
+|--:|--:|--:|
+| 8958 (jumbo) | 9.71 Gbps | 97.5 % |
+| 4096 | 9.44 Gbps | 95.4 % |
+| 2048 | 8.59 Gbps | 87.6 % |
+
+## Ports
 
 | group | direction | notes |
 |---|---|---|
@@ -51,251 +55,63 @@ packed MSB-first.
 | `conf_mac`, `conf_ip`, `conf_port` | in | this node's own address |
 | `conf_tx_dst_mac/dst_ip/dst_port` | in | where transmitted packets go |
 
-### Things you have to know before wiring it up
-
-- **The transmit destination comes from `conf_tx_dst_*`, per packet.**
-  `conf_tx_dst_mac`, `conf_tx_dst_ip` and `conf_tx_dst_port` are sampled when a
-  packet's first beat is accepted on `udp_tx`, and that packet keeps that
-  address all the way out. Hold them stable from when the first beat is offered
-  until it is accepted — the same rule AXI-Stream applies to `tdata` — and change
-  them freely at any other time, including between back-to-back packets. There
-  is no stall on a change. The block does **not** reply to whoever sent you a
-  packet, and it never issues an ARP request, so it cannot discover a peer's MAC
-  by itself — you must supply it.
-- **`udp_rx` has no `tready`.** Your logic must accept a beat every cycle while
-  `udp_rx_tvalid` is high. There is nothing to backpressure with.
-- **The receive path assumes the MAC cannot be stopped.** `mac_rx_tready` exists
-  but the XXV MAC's receive stream ignores it, so the design is built to keep up
-  or drop whole frames, never to stall the sender.
-- **Reset can be any length; do not let the MAC send during it.** The XPM FIFOs
-  inside ignore a reset shorter than 4 clocks, so `uoe.vhd` stretches every
-  `rstn` pulse, even a one-clock glitch, to at least 64 clocks before the blocks
-  see it.
-- **Release reset only once the clock is stable** — with the XXV MAC that means
-  gating on GT/MMCM lock rather than a pin.
-- **No IP fragmentation, in either direction.** The largest frame the receive
-  path can buffer is `circular_buffer_filter`'s capacity, configured as
-  `BRAM_DEPTH` × 8 = **16 KB**; anything larger is dropped. For jumbo frames set
-  MTU 9000 at both ends. On transmit, a payload that would exceed the MTU is not
-  split.
-- **Checksums.** IPv4 header checksums are computed on transmit and verified on
-  receive. The **UDP checksum is always transmitted as zero**, which is legal for
-  IPv4 and means a receiver cannot detect payload corruption from the UDP layer
-  alone.
-- **No port filtering on receive.** `rx_udp` forwards every datagram that passed
-  the MAC and IP checks and exposes `udp_rx_dst_port` so your fabric can route
-  it. `conf_port` is the *source* port used on transmit.
-- **Minimum frame.** Payloads shorter than 18 bytes are padded on transmit to
-  meet Ethernet's 60-byte minimum. The padding is not counted in the UDP length
-  field, so the receiver still sees the original length.
-
-### Using it in a block design
-
-Package it as an IP, for the part of the project it is for:
-
-```bash
-vivado -mode batch -source scripts/package_uoe.tcl -tclargs <part> [ip folder]
-```
-
-Or let `add_uoe.tcl` package it and add it, wired to an XXV MAC (10GBASE-R),
-to an open block design, from the Vivado Tcl console:
-
-```tcl
-set argv {-ip 192.168.1.128 -dclk zynq_ultra_ps_e_0/pl_clk0 \
-          -resetn zynq_ultra_ps_e_0/pl_resetn0 -sfp 0}
-source scripts/add_uoe.tcl
-```
-
-`-sfp N` is for the ZCU102 and also writes the GT pin, reference clock and
-`TX_DISABLE` constraints; on other boards pass `-gt_quad`/`-gt_lane` instead.
-`-axi` connects an AXI master to the MAC's registers. The full list of options
-is at the top of the script.
-
-Left for you: your logic on `udp_rx`/`udp_tx` and `conf_tx_dst_*`, clocked by
-`uoe_xxv/tx_clk_out_0` and reset by `uoe_rst/peripheral_aresetn`; without
-`-sfp`, the GT pin, reference clock and `uoe_sfp_tx_disable_b` constraints from
-your board's schematic; without `-axi`, a master for `uoe_xxv/s_axi_0`.
-
-### Throughput
-
-Measured on hardware, 10G link, loopback:
-
-| payload | sustained | of the theoretical maximum |
-|--:|--:|--:|
-| 8958 (jumbo) | 9.71 Gbps | 97.5 % |
-| 4096 | 9.44 Gbps | 95.4 % |
-| 2048 | 8.59 Gbps | 87.6 % |
-
-Smaller payloads are limited by packet rate rather than by this design. See
-[host_test/](host_test/) for the tool that produced these.
-
-## How a test works
-
-Nothing checks itself. The work is split three ways so that no single author's
-misunderstanding can make a broken design look correct:
-
-```
-  reference_model/gen_rx_udp.py   (Python)
-        |
-        |--> stimulus_*.txt          what to drive IN
-        '--> expected_*.txt          what should come OUT
-                    |
-  testbenches/rx_udp_tb.vhd  (VHDL)
-        reads stimulus -> drives the block -> writes axis_*.txt, sideband_*.txt
-                    |
-  reference_model/compare_beats.py
-        expected_*.txt  vs  axis_*.txt   ->  PASS / FAIL
-```
-
-The Python side predicts; the VHDL side records; the comparison judges. Because
-the design and the model are written independently from the same specification,
-a disagreement means one of them is wrong -- and finding out which is the point.
-
-Every data file is one line per **valid AXI-Stream beat**:
-
-```
-tdata(16 hex)  tkeep(2 hex)  tlast(0|1)  tuser(0|1)  [gap]
-100004D200090000 FF 0 0 0
-```
-
-`tuser` is a packet-level error flag, raised together with `tlast` to mark the
-packet just delivered as invalid -- rx_udp raises it on a datagram whose
-declared length ran past the end of the frame, and passes on a flag rx_ipv4
-raised for the same reason one layer down.
-
-Stimulus files add a 5th column, `gap`: idle cycles to insert before that beat.
-Their `tuser` column lets a test packet arrive *already* flagged, which is how
-the propagation between blocks gets exercised.
-Three stimulus variants share one expected file, because input timing must not
-change what comes out:
-
-| variant | input timing | catches |
-|---|---|---|
-| `stimulus_rx_udp_tb.txt` | no gaps | back-to-back packet handling |
-| `..._ipg.txt` | gaps between packets | idle-and-reacquire |
-| `..._random.txt` | gaps anywhere, incl. mid-packet | bubble tolerance |
-
-Bytes whose `tkeep` bit is 0 are null bytes; their `tdata` content is undefined
-and is not compared.
-
-## Running
-
-1. **Install the one missing library, once.** Vivado 2022.2 links one library
-   that Ubuntu 24.04+ no longer packages, `libtinfo.so.5`. It is a missing
-   *file*, not a missing privilege, so it installs into your home directory
-   with no root:
-
-   ```bash
-   ./scripts/setup_vivado_libs.sh          # once, ~100 KB download
-   ```
-
-2. **Run the tests**, from the project root:
-
-   ```bash
-   ./scripts/compile_check.sh                  # does the RTL compile? (seconds)
-   ./scripts/run_tests.sh                      # full regression, every block
-   ./scripts/run_tests.sh -b rx_udp -t random  # one block, one variant
-   ./scripts/run_tests.sh -l                   # list blocks and variants
-   ./scripts/run_uoe_test.sh                   # the whole chip, end to end
-   ```
-
-   The block tests each prove one hop. `run_uoe_test.sh` drives `uoe` itself
-   and covers the three things that exist only at the top level: the
-   endianness converters on the MAC ports, `circular_buffer_filter` acting on
-   the MAC's error flag, and `arp_handler` competing with the TX path for
-   `mac_tx` through `axis_priority_handler`. The transmit destination changes
-   between back-to-back packets, and every frame's MAC, IP and port are
-   checked. A final `reset` row checks the reset stretcher: a one-clock glitch
-   must still reset the design for 64 clocks.
-
-   Two streams run at once — frames into `mac_rx`, payloads into `udp_tx` — so
-   `mac_tx` carries both ARP replies and UDP frames. Nothing in the design
-   fixes how those interleave, so `split_mac_tx.py` separates them by
-   EtherType and each class is compared in order. That keeps every property
-   that is specified and tests no arbitration schedule that is not.
-
-3. **Open a waveform only when a test fails** and the file comparison hasn't
-   already told you why:
-
-   ```bash
-   ./scripts/run_wave.sh                   # rx_udp, the 'random' variant
-   ./scripts/run_wave.sh -b tx_udp -t ipg  # any block, any variant
-   ```
-
-   The variant sets the same input timing **and** the same output
-   backpressure the regression used, so what you see is the run that failed,
-   not a different one.
-
-   That reuses the regression's sources and only elaborates with
-   `--debug typical`, so it works even while other blocks fail to compile.
-   `scripts/run_sim.tcl` is the heavier alternative — it builds a real Vivado
-   project over all of `rtl/`, so it needs every source to analyse first.
-
-`scripts/vivado_env.sh` finds the install and is sourced by the other scripts;
-override with `VIVADO_ROOT=<dir containing bin/xvhdl>`. It deliberately does
-not use Vivado's own `settings64.sh`, because the installer bakes the original
-install path into that script — so an install that has since been moved leaves
-`PATH` untouched and gives no error.
-
-## Reading a failure
-
-`compare_beats.py` compares packet by packet and names each problem by the
-`# CASE` it belongs to:
-
-- **`DROPPED`** -- an expected packet never came out.
-- **`EXTRA`** -- the design emitted a packet the model did not predict.
-- **`beat k of n: ...`** -- right packet, wrong contents; the beat and field
-  that differ are shown.
-- **`expected n beat(s), got m`** -- right packet, wrong length.
-- **`sideband ... != ...`** -- a latched output (source address, port) is wrong.
-
-A `protocol errors=N` count above zero comes from `axis_checker` instead: the
-simulator log names the rule that was broken and when.
-
 ## What is where
 
-| Path | What it holds |
+| Folder | What it holds |
 |---|---|
 | `rtl/` | the hardware design -- one VHDL file per block |
-| `testbenches/` | VHDL testbenches: `<block>_tb.vhd` per block, plus the files below |
-| [`testbenches/README.md`](testbenches/README.md) | how the reusable AXIS components work |
-| `testbenches/axis_pkg.vhd` | shared beat type and helpers |
-| `testbenches/axis_driver.vhd` | plays a stimulus file onto a bus |
-| `testbenches/axis_monitor.vhd` | logs valid beats to a file |
-| `testbenches/sideband_monitor.vhd` | logs a latched non-AXIS output (e.g. `src_port`) |
-| `testbenches/axis_checker.vhd` | passive AXI-Stream protocol assertions |
-| `testbenches/axis_stall.vhd` | randomized `tready`, for backpressure testing |
-| `testbenches/uoe_tb_full.vhd` | the whole chip, end to end |
-| `testbenches/uoe_reset_tb.vhd` | the whole chip's reset stretcher |
-| `reference_model/` | an independent Python model of the same protocols |
-| `reference_model/uoe_model.py` | shared: byte packing, checksums, headers, per-block models |
-| `reference_model/gen_<block>.py` | writes the test vectors for one block |
-| `reference_model/gen_uoe.py` | writes the test vectors for the whole chip |
-| `reference_model/split_mac_tx.py` | splits a `mac_tx` capture by EtherType |
-| `reference_model/split_by_tag.py` | splits a two-source capture by a payload tag |
-| `reference_model/compare_beats.py` | diffs what the simulation produced vs what was predicted |
-| `reference_model/test_vectors/` | generated data + simulation output (all gitignored) |
-| `scripts/` | build and run helpers |
-| `scripts/setup_vivado_libs.sh` | one-time: make Vivado runnable without root |
-| `scripts/vivado_env.sh` | sourced by the others; locates the toolchain |
-| `scripts/test_tables.sh` | sourced by the test scripts; settings they share |
-| `scripts/compile_check.sh` | analyse `rtl/` only |
-| `scripts/run_tests.sh` | the regression, block by block |
-| `scripts/run_uoe_test.sh` | the full-chip regression |
-| `scripts/run_wave.sh` | GUI waveform for one block and variant |
-| `scripts/run_sim.tcl` | full-project waveform run (needs all of `rtl/` to compile) |
-| `scripts/package_uoe.tcl` | packages `rtl/` as a Vivado IP |
-| `scripts/add_uoe.tcl` | adds the UOE and an XXV MAC to a block design |
-| `scripts/completions.bash` | tab completion for the test scripts |
-| `host_test/` | host-side bring-up test for the real board |
-| `host_test/uoe_loopback_test.c` | UDP loopback checker; no root, plain sockets |
-| `host_test/udp_echo.c` | software echo, to test the host side without a board |
-| `host_test/Makefile` | builds both |
-| [`host_test/README.md`](host_test/README.md) | how to cable and configure it, and what can lie |
+| `testbenches/` | VHDL testbenches and the reusable AXIS components they are built from ([README](testbenches/README.md)) |
+| `reference_model/` | an independent Python model of the same protocols; writes the test vectors and compares the results |
+| `scripts/` | build and run helpers, and the Vivado scripts that package the UOE and add it to a block design |
+| `host_test/` | host-side bring-up test for the real board ([README](host_test/README.md)) |
+| `Docs/` | [integration](Docs/integration.md), and the images used here |
 
-Testbenches are built from the reusable components in `testbenches/`, so a new
-one is mostly the DUT plus wiring. [testbenches/README.md](testbenches/README.md) explains the
-components and how to add a block.
+
+## Getting started
+
+1. **Package the UOE as a Vivado IP**, for your FPGA part:
+
+   ```bash
+   ./scripts/package_uoe.sh --part xczu9eg-ffvb1156-2-e
+   ```
+
+   `--part` is the FPGA part of the project the IP is for: Vivado shows it
+   under Project Settings > General > Project device, and the example is the
+   ZCU102's. Any part Vivado accepts works.
+
+   The IP lands in `ip/uoe` (`--out` to change that). Add `ip/` to your project's IP repositories
+   (Settings > IP > Repository) and it is in the catalog as
+   "UDP Offload Engine".
+
+2. **Or add it to a block design, wired to an XXV 10G MAC.** With the
+   project closed in Vivado (this packages the IP itself):
+
+   ```bash
+   ./scripts/add_uoe.sh --project my_project.xpr --ip 192.168.1.128 \
+       --dclk zynq_ultra_ps_e_0/pl_clk0 --resetn zynq_ultra_ps_e_0/pl_resetn0 --sfp 0
+   ```
+
+   | option | what it is |
+   |---|---|
+   | `--project` | the Vivado project (`.xpr`) whose block design gets the UOE |
+   | `--ip` | the board's own IPv4 address on the network (the UOE's `conf_ip`) |
+   | `--dclk` | a free-running clock already in the block design, e.g. 100 MHz from the PS. It clocks the MAC's transceiver control and its register port |
+   | `--resetn` | an active-low reset for that clock; it also holds the MAC in reset |
+   | `--sfp` | ZCU102 only: which SFP+ cage (0..3) the cable is in. Sets the transceiver and writes the pin constraints |
+
+   `--dclk` and `--resetn` name a pin as `<block>/<pin>`, as the block
+   design shows it. Useful optional ones: `--mac` (the board's MAC, default
+   00:0A:35:00:00:01), `--port` (the UDP port it sends from, default 1234) and
+   `--axi` (an AXI master, e.g. `zynq_ultra_ps_e_0/M_AXI_HPM0_FPD`, to reach
+   the MAC's registers). On other boards use `--gt_quad`/`--gt_lane` instead of
+   `--sfp`. Then connect your logic to `udp_rx`/`udp_tx` and `conf_tx_dst_*`. The options,
+   and what is left for you, are in
+   [Docs/integration.md](Docs/integration.md#using-it-in-a-block-design).
+
+## Testing
+
+How the tests work and how to run them is in
+[testbenches/README.md](testbenches/README.md).
 
 ## License
 

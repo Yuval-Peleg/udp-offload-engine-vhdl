@@ -4,7 +4,72 @@ Every block has a testbench here, built from a few reusable verification
 components. A testbench is mostly the DUT and its wiring; the components do
 the file I/O, the handshakes and the protocol checks.
 
+## Running the tests
+
+1. **Install the one missing library, once.** Vivado 2022.2 links one library
+   that Ubuntu 24.04+ no longer packages, `libtinfo.so.5`. It is a missing
+   *file*, not a missing privilege, so it installs into your home directory
+   with no root:
+
+   ```bash
+   ./scripts/setup_vivado_libs.sh          # once, ~100 KB download
+   ```
+
+2. **Run the tests**, from the project root:
+
+   ```bash
+   ./scripts/compile_check.sh                  # does the RTL compile? (seconds)
+   ./scripts/run_tests.sh                      # full regression, every block
+   ./scripts/run_tests.sh -b rx_udp -t random  # one block, one variant
+   ./scripts/run_tests.sh -l                   # list blocks and variants
+   ./scripts/run_uoe_test.sh                   # the whole chip, end to end
+   ```
+
+   The block tests each prove one hop. `run_uoe_test.sh` drives `uoe` itself
+   and covers the three things that exist only at the top level: the
+   endianness converters on the MAC ports, `circular_buffer_filter` acting on
+   the MAC's error flag, and `arp_handler` competing with the TX path for
+   `mac_tx` through `axis_priority_handler`. The transmit destination changes
+   between back-to-back packets, and every frame's MAC, IP and port are
+   checked. A final `reset` row checks the reset stretcher: a one-clock glitch
+   must still reset the design for 64 clocks.
+
+   Two streams run at once — frames into `mac_rx`, payloads into `udp_tx` — so
+   `mac_tx` carries both ARP replies and UDP frames. Nothing in the design
+   fixes how those interleave, so `split_mac_tx.py` separates them by
+   EtherType and each class is compared in order. That keeps every property
+   that is specified and tests no arbitration schedule that is not.
+
+3. **Open a waveform only when a test fails** and the file comparison hasn't
+   already told you why:
+
+   ```bash
+   ./scripts/run_wave.sh                   # rx_udp, the 'random' variant
+   ./scripts/run_wave.sh -b tx_udp -t ipg  # any block, any variant
+   ```
+
+   The variant sets the same input timing **and** the same output
+   backpressure the regression used, so what you see is the run that failed,
+   not a different one.
+
+   That reuses the regression's sources and only elaborates with
+   `--debug typical`, so it works even while other blocks fail to compile.
+   `scripts/run_sim.tcl` is the heavier alternative — it builds a real Vivado
+   project over all of `rtl/`, so it needs every source to analyse first.
+
+`scripts/vivado_env.sh` finds the install and is sourced by the other scripts;
+override with `VIVADO_ROOT=<dir containing bin/xvhdl>`. It deliberately does
+not use Vivado's own `settings64.sh`, because the installer bakes the original
+install path into that script — so an install that has since been moved leaves
+`PATH` untouched and gives no error.
+
+When a test fails, [Reading a failure](#reading-a-failure)
+explains what the report means.
+
 ## How a test fits together
+
+Nothing checks itself. The work is split three ways so that no single author's
+misunderstanding can make a broken design look correct:
 
 ```
 reference_model/gen_<block>.py  ->  stimulus_*.txt, expected_*.txt
@@ -15,6 +80,10 @@ reference_model/gen_<block>.py  ->  stimulus_*.txt, expected_*.txt
                                           |
 reference_model/compare_beats.py:  expected_*.txt vs axis_*.txt  ->  PASS / FAIL
 ```
+
+The Python side predicts; the VHDL side records; the comparison judges. Because
+the design and the model are written independently from the same specification,
+a disagreement means one of them is wrong -- and finding out which is the point.
 
 Two independent judges look at every run:
 
@@ -77,9 +146,15 @@ tdata(16 hex)  tkeep(2 hex)  tlast(0|1)  tuser(0|1)  [gap]
 100004D200090000 FF 0 0 0
 ```
 
+`tuser` is a packet-level error flag, raised together with `tlast` to mark the
+packet just delivered as invalid -- rx_udp raises it on a datagram whose
+declared length ran past the end of the frame, and passes on a flag rx_ipv4
+raised for the same reason one layer down.
+
 Stimulus files add `gap`, the number of idle cycles to insert before that
-beat. Lines starting with `#` are comments. A `# CASE <n> <text>` line names
-the packet that follows; `axis_driver` puts it on `case_index` / `case_name`,
+beat. Their `tuser` column lets a test packet arrive *already* flagged, which
+is how the propagation between blocks gets exercised. Lines starting with `#`
+are comments. A `# CASE <n> <text>` line names the packet that follows; `axis_driver` puts it on `case_index` / `case_name`,
 so a waveform shows which packet is being driven.
 
 Bytes whose `tkeep` bit is 0 are null bytes. Their content is undefined and
@@ -90,11 +165,11 @@ is never compared.
 Each block runs three times against the same expected file, because input
 timing and output backpressure must never change the output:
 
-| variant | input gaps | output ready |
-|---|---|---|
-| `gapless` | none | 100 % |
-| `ipg` | between packets | 70 % |
-| `random` | anywhere, including mid-packet | 40 % |
+| variant | input gaps | output ready | catches |
+|---|---|---|---|
+| `gapless` | none | 100 % | back-to-back packet handling |
+| `ipg` | between packets | 70 % | idle-and-reacquire |
+| `random` | anywhere, including mid-packet | 40 % | bubble tolerance |
 
 ## Adding a block
 
@@ -114,6 +189,21 @@ failure.
 
 Before trusting a new check, break the DUT on purpose once and make sure the
 check fails.
+
+## Reading a failure
+
+`compare_beats.py` compares packet by packet and names each problem by the
+`# CASE` it belongs to:
+
+- **`DROPPED`** -- an expected packet never came out.
+- **`EXTRA`** -- the design emitted a packet the model did not predict.
+- **`beat k of n: ...`** -- right packet, wrong contents; the beat and field
+  that differ are shown.
+- **`expected n beat(s), got m`** -- right packet, wrong length.
+- **`sideband ... != ...`** -- a latched output (source address, port) is wrong.
+
+A `protocol errors=N` count above zero comes from `axis_checker` instead: the
+simulator log names the rule that was broken and when.
 
 ## Simulator notes (Vivado xsim 2022.2)
 
