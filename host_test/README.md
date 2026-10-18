@@ -93,13 +93,14 @@ drained afterwards. Answers *how fast does it go?*
 
 You do not supply a rate. For each payload size the tool searches for the
 highest rate the link sustains, and the run ends with a headline like this
-(example output; the numbers depend on the link and the PC):
+(three sizes from a `--jumbo` run, the measurements quoted in the main README;
+the numbers depend on the link and the PC):
 
 ```
   sustained goodput
-       18 byte payload (60 byte frame):  1.902 Gbps  (63.4% of the 3.000 Gbps design figure, 13.209 Mpps)
-     1472 byte payload (1514 byte frame):  9.512 Gbps  (97.8% of the 9.723 Gbps design figure, 0.808 Mpps)
-     8958 byte payload (9000 byte frame):  9.901 Gbps  (99.5% of the 9.953 Gbps design figure, 0.138 Mpps)
+     2048 byte payload (2090 byte frame):  8.588 Gbps  (87.6% of the 9.799 Gbps design figure, 0.524 Mpps)
+     4096 byte payload (4138 byte frame):  9.440 Gbps  (95.4% of the 9.899 Gbps design figure, 0.288 Mpps)
+     8958 byte payload (9000 byte frame):  9.705 Gbps  (97.5% of the 9.953 Gbps design figure, 0.135 Mpps)
 ```
 
 The search bisects rather than ramps: the failure is a cliff — the queue either

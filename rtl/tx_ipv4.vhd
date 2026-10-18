@@ -174,7 +174,7 @@ begin
                                                                 to_integer(unsigned(m_axis_fifo_tuser(15 downto 0)))
                                                                 , 20);
 
-                                        -- running packet numbering, rolls back to zero which reaches max (16 bits)
+                                        -- running packet numbering, rolls back to zero when it reaches max (16 bits)
                                         if(id = (2**16)-1) then
                                             id <= 0;
                                         else
