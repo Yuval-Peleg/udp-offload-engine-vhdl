@@ -130,6 +130,11 @@ jumbo frames (8958-byte payloads, 97.5 % of the theoretical maximum),
 >
 > — Yuval Peleg
 
+> I helped, but the Lion's share of the work is Yuval's - his professionalism, deep understanding, and methodology brought you this project! Hope you enjoy!
+
+> — Aylon 
+
+
 ## License
 
 MIT, see [LICENSE](LICENSE).
