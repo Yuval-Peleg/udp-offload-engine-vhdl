@@ -113,6 +113,16 @@ jumbo frames (8958-byte payloads, 97.5 % of the theoretical maximum),
 | `host_test/` | host-side bring-up test for the real board ([README](host_test/README.md)) |
 | `Docs/` | [integration](Docs/integration.md), and the logo and video used here |
 
+## AI usage
+
+- **Written by hand:** the hardware design, everything in `rtl/`, by Yuval
+  Peleg and Aylon Feraru.
+- **Written by AI (Claude), under our direction:** the
+  testbenches (`testbenches/`), the Python reference model
+  (`reference_model/`), the scripts (`scripts/`), the host-side test tool
+  (`host_test/`) and most of the documentation.
+- **Made with Claude Design:** the explainer video and the logo.
+
 ## Authors' notes
 
 > Hope you find this repo useful 🙏 We've tried to make it as readable and
