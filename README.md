@@ -5,9 +5,7 @@
 A UDP/IPv4/Ethernet offload engine in VHDL, targeting a Xilinx FPGA behind the
 XXV Ethernet (10G/25G) MAC.
 
-<p align="center">
-  <a href="Docs/Videos/UOE_explainer.mp4"><b>▶ Watch how the UOE works</b></a> (video, 3 minutes)
-</p>
+https://github.com/user-attachments/assets/66b7be16-38d7-4ad0-9b0d-272d15d6fd64
 
 ## Features
 
