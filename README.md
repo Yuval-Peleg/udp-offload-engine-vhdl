@@ -43,6 +43,10 @@ jumbo frames (8958-byte payloads, 97.5 % of the theoretical maximum),
 
 ## Ports
 
+<p align="center">
+  <img src="Docs/Images/UDP_Offload_Engine_IP.png" alt="The UOE as a Vivado IP block" width="560">
+</p>
+
 | group | direction | notes |
 |---|---|---|
 | `mac_rx_*` | in | from the MAC. Carries `tuser` as the MAC's per-frame error flag |
