@@ -37,13 +37,9 @@ https://github.com/user-attachments/assets/a99e12ae-3682-4554-88a3-a12f3bb0d1a7
 
 ## Throughput
 
-Measured on hardware, 10G link, loopback:
-
-| payload | sustained | of the theoretical maximum |
-|--:|--:|--:|
-| 8958 (jumbo) | 9.71 Gbps | 97.5 % |
-| 4096 | 9.44 Gbps | 95.4 % |
-| 2048 | 8.59 Gbps | 87.6 % |
+Measured on hardware over a 10G link in loopback: **9.71 Gbps** sustained with
+jumbo frames (8958-byte payloads, 97.5 % of the theoretical maximum),
+9.44 Gbps at 4096 bytes (95.4 %) and 8.59 Gbps at 2048 bytes (87.6 %).
 
 ## Ports
 
@@ -56,18 +52,6 @@ Measured on hardware, 10G link, loopback:
 | `udp_rx_src_mac/src_ip/src_port/dst_port` | out | who the packet came from, and which port it was for |
 | `conf_mac`, `conf_ip`, `conf_port` | in | this node's own address |
 | `conf_tx_dst_mac/dst_ip/dst_port` | in | where transmitted packets go |
-
-## What is where
-
-| Folder | What it holds |
-|---|---|
-| `rtl/` | the hardware design -- one VHDL file per block |
-| `testbenches/` | VHDL testbenches and the reusable AXIS components they are built from ([README](testbenches/README.md)) |
-| `reference_model/` | an independent Python model of the same protocols; writes the test vectors and compares the results |
-| `scripts/` | build and run helpers, and the Vivado scripts that package the UOE and add it to a block design |
-| `host_test/` | host-side bring-up test for the real board ([README](host_test/README.md)) |
-| `Docs/` | [integration](Docs/integration.md), and the images used here |
-
 
 ## Getting started
 
@@ -93,13 +77,16 @@ Measured on hardware, 10G link, loopback:
        --dclk zynq_ultra_ps_e_0/pl_clk0 --resetn zynq_ultra_ps_e_0/pl_resetn0 --sfp 0
    ```
 
-   | option | what it is |
-   |---|---|
-   | `--project` | the Vivado project (`.xpr`) whose block design gets the UOE |
-   | `--ip` | the board's own IPv4 address on the network (the UOE's `conf_ip`) |
-   | `--dclk` | a free-running clock already in the block design, e.g. 100 MHz from the PS. It clocks the MAC's transceiver control and its register port |
-   | `--resetn` | an active-low reset for that clock; it also holds the MAC in reset |
-   | `--sfp` | ZCU102 only: which SFP+ cage (0..3) the cable is in. Sets the transceiver and writes the pin constraints |
+   - `--project`: the Vivado project (`.xpr`) whose block design gets the UOE.
+   - `--ip`: the board's own IPv4 address on the network (the UOE's
+     `conf_ip`).
+   - `--dclk`: a free-running clock already in the block design, e.g. 100 MHz
+     from the PS. It clocks the MAC's transceiver control and its register
+     port.
+   - `--resetn`: an active-low reset for that clock; it also holds the MAC in
+     reset.
+   - `--sfp`: ZCU102 only: which SFP+ cage (0..3) the cable is in. Sets the
+     transceiver and writes the pin constraints.
 
    `--dclk` and `--resetn` name a pin as `<block>/<pin>`, as the block
    design shows it. Useful optional ones: `--mac` (the board's MAC, default
@@ -110,10 +97,16 @@ Measured on hardware, 10G link, loopback:
    and what is left for you, are in
    [Docs/integration.md](Docs/integration.md#using-it-in-a-block-design).
 
-## Testing
+## Repository layout
 
-How the tests work and how to run them is in
-[testbenches/README.md](testbenches/README.md).
+| Folder | What it holds |
+|---|---|
+| `rtl/` | the hardware design -- one VHDL file per block |
+| `testbenches/` | VHDL testbenches and the reusable AXIS components they are built from ([README](testbenches/README.md)) |
+| `reference_model/` | an independent Python model of the same protocols; writes the test vectors and compares the results |
+| `scripts/` | build and run helpers, and the Vivado scripts that package the UOE and add it to a block design |
+| `host_test/` | host-side bring-up test for the real board ([README](host_test/README.md)) |
+| `Docs/` | [integration](Docs/integration.md), and the logo and video used here |
 
 ## License
 
